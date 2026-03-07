@@ -1,0 +1,228 @@
+const {
+  Client,
+  GatewayIntentBits,
+  Partials,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require("discord.js");
+
+const express = require("express");
+const sqlite3 = require("sqlite3").verbose();
+const axios = require("axios");
+
+// ================= SERVER WEB PER RENDER =================
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("Taxi Bot Online!");
+});
+
+app.listen(3000, () => {
+  console.log("Server web attivo sulla porta 4000");
+});
+
+// ================= CONFIG =================
+const TAXI_ROLE_ID = "1455329847122591918";
+const TAXI_CHANNEL_ID = "1468316689174364374";
+const LOG_CHANNEL_ID = "1455328423156252824";
+const STAFF_ROLE_ID = "1455329952395296901";
+
+// ================= DATABASE =================
+const db = new sqlite3.Database("./taxi.db");
+
+db.run(`CREATE TABLE IF NOT EXISTS calls (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ userId TEXT,
+ roblox TEXT,
+ position TEXT,
+ destination TEXT,
+ price TEXT,
+ status TEXT
+)`);
+
+// ================= BOT =================
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.MessageContent,
+  ],
+  partials: [Partials.Channel],
+});
+
+client.once("clientReady", () => {
+  console.log(`🚕 Taxi Bot online come ${client.user.tag}`);
+});
+
+// ================= COMANDI =================
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+
+  // ===== PANNELLO TAXI =====
+  if (message.content === "!taxi") {
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("call_taxi")
+        .setLabel("🚕 Chiama Taxi")
+        .setStyle(ButtonStyle.Success)
+    );
+
+    message.channel.send({
+      content: "🚕 **Sistema Taxi**\nPremi il bottone per chiamare un taxi.",
+      components: [row],
+    });
+  }
+
+  // ===== TAXI ROULETTE =====
+  if (message.content === "!taxi_roulette") {
+    db.all(`SELECT userId FROM calls`, (err, rows) => {
+      if (!rows || rows.length === 0) {
+        return message.reply("❌ Nessun cliente registrato.");
+      }
+
+      const random = rows[Math.floor(Math.random() * rows.length)];
+
+      message.channel.send(
+        `🎰 **Taxi Roulette**\nIl cliente fortunato è: <@${random.userId}>`
+      );
+    });
+  }
+
+  // ===== PEX DEPEX =====
+  if (message.content === "!pexdepex") {
+    if (!message.member.roles.cache.has(STAFF_ROLE_ID)) {
+      return message.reply("❌ Non hai il permesso.");
+    }
+
+    const taxiRole = message.guild.roles.cache.get(TAXI_ROLE_ID);
+
+    let list = "";
+    taxiRole.members.forEach((member, i) => {
+      list += `${i + 1}. ${member}\n`;
+    });
+
+    message.channel.send(`🚕 **Lista Taxisti**
+
+${list}
+
+Scrivi:
+numero pex motivo
+numero depex motivo
+numero rimozione motivo`);
+  }
+});
+
+// ================= INTERAZIONI =================
+client.on("interactionCreate", async (interaction) => {
+  // ===== BOTTONE CHIAMA TAXI =====
+  if (interaction.isButton() && interaction.customId === "call_taxi") {
+    const modal = new ModalBuilder()
+      .setCustomId("taxi_modal")
+      .setTitle("Richiesta Taxi");
+
+    const roblox = new TextInputBuilder()
+      .setCustomId("roblox_name")
+      .setLabel("Nome Roblox")
+      .setStyle(TextInputStyle.Short);
+
+    const position = new TextInputBuilder()
+      .setCustomId("position")
+      .setLabel("Posizione")
+      .setStyle(TextInputStyle.Short);
+
+    const destination = new TextInputBuilder()
+      .setCustomId("destination")
+      .setLabel("Destinazione")
+      .setStyle(TextInputStyle.Short);
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(roblox),
+      new ActionRowBuilder().addComponents(position),
+      new ActionRowBuilder().addComponents(destination)
+    );
+
+    await interaction.showModal(modal);
+  }
+
+  // ===== MODULO TAXI =====
+  if (interaction.isModalSubmit() && interaction.customId === "taxi_modal") {
+    const roblox = interaction.fields.getTextInputValue("roblox_name");
+    const position = interaction.fields.getTextInputValue("position");
+    const destination = interaction.fields.getTextInputValue("destination");
+
+    // verifica roblox
+    const res = await axios.post(
+      "https://users.roblox.com/v1/usernames/users",
+      {
+        usernames: [roblox],
+        excludeBannedUsers: true,
+      }
+    );
+
+    if (!res.data.data[0]) {
+      return interaction.reply({
+        content: "❌ Nome Roblox non trovato.",
+        ephemeral: true,
+      });
+    }
+
+    db.run(
+      `INSERT INTO calls(userId,roblox,position,destination,status) VALUES(?,?,?,?,?)`,
+      [interaction.user.id, roblox, position, destination, "waiting"]
+    );
+
+    const taxiChannel = client.channels.cache.get(TAXI_CHANNEL_ID);
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`accept_${interaction.user.id}`)
+        .setLabel("✅ Accetta")
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId(`deny_${interaction.user.id}`)
+        .setLabel("❌ Rifiuta")
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    taxiChannel.send({
+      content: `🚕 **Nuova Chiamata**
+
+Cliente: <@${interaction.user.id}>
+Roblox: ${roblox}
+Posizione: ${position}
+Destinazione: ${destination}
+
+<@&${TAXI_ROLE_ID}>`,
+      components: [row],
+    });
+
+    interaction.reply({
+      content: "✅ Taxi chiamato!",
+      ephemeral: true,
+    });
+  }
+
+  // ===== ACCETTA TAXI =====
+  if (interaction.isButton() && interaction.customId.startsWith("accept_")) {
+    const userId = interaction.customId.split("_")[1];
+
+    interaction.reply(`🚕 Hai accettato la corsa di <@${userId}>`);
+
+    const user = await client.users.fetch(userId);
+    user.send("🚕 Un taxista ha accettato la tua richiesta!");
+  }
+
+  // ===== RIFIUTA TAXI =====
+  if (interaction.isButton() && interaction.customId.startsWith("deny_")) {
+    interaction.reply("❌ Hai rifiutato la corsa.");
+  }
+});
+
+// ================= LOGIN =================
+client.login(process.env.TOKEN);
