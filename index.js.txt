@@ -22,7 +22,7 @@ app.get("/", (req, res) => {
 });
 
 app.listen(3000, () => {
-  console.log("Server web attivo sulla porta 4000");
+  console.log("Server web attivo sulla porta 3000");
 });
 
 // ================= CONFIG =================
@@ -64,7 +64,7 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   // ===== PANNELLO TAXI =====
-  if (message.content === "!taxi") {
+  if (message.content === "/taxi") {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("call_taxi")
@@ -79,7 +79,7 @@ client.on("messageCreate", async (message) => {
   }
 
   // ===== TAXI ROULETTE =====
-  if (message.content === "!taxi_roulette") {
+  if (message.content === "/ taxi_roulette") {
     db.all(`SELECT userId FROM calls`, (err, rows) => {
       if (!rows || rows.length === 0) {
         return message.reply("❌ Nessun cliente registrato.");
@@ -94,7 +94,7 @@ client.on("messageCreate", async (message) => {
   }
 
   // ===== PEX DEPEX =====
-  if (message.content === "!pexdepex") {
+  if (message.content === "/pexdepex") {
     if (!message.member.roles.cache.has(STAFF_ROLE_ID)) {
       return message.reply("❌ Non hai il permesso.");
     }
