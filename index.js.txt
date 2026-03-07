@@ -15,16 +15,11 @@ const sqlite3 = require("sqlite3").verbose();
 const axios = require("axios");
 
 // ================= SERVER WEB PER RENDER =================
-const app = express();
+const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => {
-  res.send("Taxi Bot Online!");
+app.listen(PORT, () => {
+  console.log(`Server attivo sulla porta ${PORT}`);
 });
-
-app.listen(3000, () => {
-  console.log("Server web attivo sulla porta 3000");
-});
-
 // ================= CONFIG =================
 const TAXI_ROLE_ID = "1455329847122591918";
 const TAXI_CHANNEL_ID = "1468316689174364374";
